@@ -1,0 +1,18 @@
+# Go build/test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+bin/
+dist/
+
+# Module/workspace metadata
+go.work
+go.work.sum
+
+# Local Go build cache (used in sandboxed tests)
+.gocache/

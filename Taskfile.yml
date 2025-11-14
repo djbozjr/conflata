@@ -1,0 +1,46 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Show available tasks and short descriptions
+    cmds:
+      - task --list
+
+  fmt:
+    desc: Run gofmt across the entire module
+    cmds:
+      - gofmt -w .
+
+  install:tools:
+    desc: Install staticcheck and gosec via go install
+    cmds:
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
+      - go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+  lint:
+    desc: Run go vet and staticcheck
+    deps:
+      - install:tools
+    cmds:
+      - GOCACHE=$(pwd)/.gocache go vet ./...
+      - staticcheck ./...
+
+  sec:
+    desc: Run gosec security analysis
+    deps:
+      - install:tools
+    cmds:
+      - gosec ./...
+
+  test:
+    desc: Run module tests with sandboxed cache
+    cmds:
+      - GOCACHE=$(pwd)/.gocache go test ./...
+
+  verify:
+    desc: Run fmt, lint, security, and tests sequentially
+    deps:
+      - fmt
+      - lint
+      - sec
+      - test
