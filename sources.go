@@ -79,7 +79,8 @@ func (l *Loader) newProviderSource(tag fieldTag) valueSource {
 	return providerSource{
 		identifier: fullIdentifier,
 		fetchFunc: func(ctx context.Context) (string, error) {
-			raw, err := provider.Fetch(ctx, tag.ProviderKey)
+			key := l.decorateKey(tag.ProviderKey)
+			raw, err := provider.Fetch(ctx, key)
 			if err != nil {
 				return "", err
 			}
@@ -89,4 +90,17 @@ func (l *Loader) newProviderSource(tag fieldTag) valueSource {
 			return raw, nil
 		},
 	}
+}
+
+func (l *Loader) decorateKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if l.prefixFunc != nil {
+		key = l.prefixFunc() + key
+	}
+	if l.suffixFunc != nil {
+		key += l.suffixFunc()
+	}
+	return key
 }

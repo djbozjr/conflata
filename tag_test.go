@@ -3,7 +3,7 @@ package conflata
 import "testing"
 
 func TestParseFieldTagSuccess(t *testing.T) {
-	tag, err := parseFieldTag(`env:DATABASE_URL provider:db-url backend:vault format:json`)
+	tag, err := parseFieldTag(`env:DATABASE_URL provider:db-url backend:vault format:json default:"fallback value"`)
 	if err != nil {
 		t.Fatalf("parseFieldTag error: %v", err)
 	}
@@ -18,6 +18,16 @@ func TestParseFieldTagSuccess(t *testing.T) {
 	}
 	if tag.Format != "json" {
 		t.Fatalf("expected format json, got %s", tag.Format)
+	}
+}
+
+func TestParseFieldTagDefaultWithSpaces(t *testing.T) {
+	tag, err := parseFieldTag(`default:   'my name is dave'`)
+	if err != nil {
+		t.Fatalf("parseFieldTag error: %v", err)
+	}
+	if !tag.HasDefault || tag.DefaultValue != "my name is dave" {
+		t.Fatalf("expected default to be set, got %+v", tag)
 	}
 }
 

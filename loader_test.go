@@ -47,12 +47,8 @@ func TestLoaderEnvPrecedence(t *testing.T) {
 	)
 
 	var cfg Config
-	group, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if group != nil {
-		t.Fatalf("expected no error group, got %v", group)
 	}
 	if cfg.DatabaseURL != "postgres://env" {
 		t.Fatalf("expected env to win, got %s", cfg.DatabaseURL)
@@ -71,12 +67,8 @@ func TestLoaderProviderFallback(t *testing.T) {
 		WithDefaultProvider("vault"),
 	)
 	var cfg Config
-	group, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if group != nil {
-		t.Fatalf("expected success, got %v", group)
 	}
 	if cfg.APIKey != "secret" {
 		t.Fatalf("expected provider value, got %s", cfg.APIKey)
@@ -96,11 +88,15 @@ func TestLoaderAggregatesErrors(t *testing.T) {
 		WithDefaultProvider("vault"),
 	)
 	var cfg Config
-	group, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
+	err := loader.Load(context.Background(), &cfg)
+	if err == nil {
+		t.Fatalf("expected error group")
 	}
-	if group == nil || len(group.Fields()) != 1 {
+	group, ok := err.(*ErrorGroup)
+	if !ok {
+		t.Fatalf("expected ErrorGroup, got %T", err)
+	}
+	if len(group.Fields()) != 1 {
 		t.Fatalf("expected one field error, got %v", group)
 	}
 	fieldErr := group.Fields()[0]
@@ -131,12 +127,8 @@ func TestLoaderDecodesStructAndPointer(t *testing.T) {
 		return v, ok
 	}))
 	var cfg Config
-	group, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if group != nil {
-		t.Fatalf("expected success, got %v", group)
 	}
 	if cfg.TimeoutSeconds != 42 || !cfg.Nested.Enabled || cfg.PtrNested == nil || cfg.PtrNested.Enabled {
 		t.Fatalf("unexpected values: %+v", cfg)
@@ -158,12 +150,8 @@ func TestLoaderSupportsXMLFormat(t *testing.T) {
 	}
 	loader := New(WithEnvLookup(envLookup))
 	var cfg Config
-	group, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if group != nil {
-		t.Fatalf("expected success, got %v", group)
 	}
 	if cfg.Data.Value != "hello" {
 		t.Fatalf("expected xml decode, got %+v", cfg.Data)
@@ -181,12 +169,8 @@ func TestLoaderDefaultProviderIsAWS(t *testing.T) {
 		}}),
 	)
 	var cfg Config
-	errGroup, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if errGroup != nil {
-		t.Fatalf("expected success, got %v", errGroup)
 	}
 	if cfg.Secret != "from-aws" {
 		t.Fatalf("expected default provider to be aws, got %s", cfg.Secret)
@@ -220,12 +204,8 @@ func TestLoaderCustomDefaultFormat(t *testing.T) {
 		WithDefaultFormat("kv"),
 	)
 	var cfg Config
-	errGroup, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if errGroup != nil {
-		t.Fatalf("expected success, got %v", errGroup)
 	}
 	if cfg.Settings["alpha"] != "beta" || cfg.Settings["gamma"] != "delta" {
 		t.Fatalf("unexpected settings %+v", cfg.Settings)
@@ -254,18 +234,43 @@ func TestLoaderNestedStructTagDecodesAndOverrides(t *testing.T) {
 		return v, ok
 	}))
 	var cfg Config
-	errGroup, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if errGroup != nil {
-		t.Fatalf("expected success, got %v", errGroup)
 	}
 	if cfg.API.BaseURL != "https://api.example" || cfg.API.Cache.Enabled != true {
 		t.Fatalf("json decode failed: %+v", cfg.API)
 	}
 	if cfg.API.Token != "secret-token" {
 		t.Fatalf("nested token override failed, got %s", cfg.API.Token)
+	}
+}
+
+func TestLoaderSkipsUntaggedStructFields(t *testing.T) {
+	type Nested struct {
+		Secret string `conflata:"env:NESTED_SECRET"`
+	}
+	type Config struct {
+		Tagged   Nested `conflata:"env:TAGGED provider:tagged"`
+		Untagged Nested
+	}
+
+	env := map[string]string{
+		"NESTED_SECRET": "override",
+		"TAGGED":        `{"secret":"base"}`,
+	}
+	loader := New(WithEnvLookup(func(key string) (string, bool) {
+		v, ok := env[key]
+		return v, ok
+	}))
+	var cfg Config
+	if err := loader.Load(context.Background(), &cfg); err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Tagged.Secret != "override" {
+		t.Fatalf("expected tagged struct to allow nested override, got %+v", cfg.Tagged)
+	}
+	if cfg.Untagged.Secret != "" {
+		t.Fatalf("expected untagged struct to remain zero, got %+v", cfg.Untagged)
 	}
 }
 
@@ -286,14 +291,67 @@ func TestLoaderNestedStructFromProvider(t *testing.T) {
 		WithProvider("aws", provider),
 	)
 	var cfg Config
-	errGroup, err := loader.Load(context.Background(), &cfg)
-	if err != nil {
+	if err := loader.Load(context.Background(), &cfg); err != nil {
 		t.Fatalf("Load returned error: %v", err)
-	}
-	if errGroup != nil {
-		t.Fatalf("expected success, got %v", errGroup)
 	}
 	if cfg.API.BaseURL != "https://api.provider" || cfg.API.Token != "from-provider" {
 		t.Fatalf("nested provider decode failed: %+v", cfg.API)
+	}
+}
+
+func TestLoaderProviderPrefixSuffix(t *testing.T) {
+	type Config struct {
+		Token string `conflata:"provider:api-token"`
+	}
+	provider := stubProvider{values: map[string]providerResponse{
+		"prd-api-token-v2": {value: "secret"},
+	}}
+	loader := New(
+		WithProvider("aws", provider),
+		WithProviderPrefix(func() string { return "prd-" }),
+		WithProviderSuffix(func() string { return "-v2" }),
+	)
+	var cfg Config
+	if err := loader.Load(context.Background(), &cfg); err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Token != "secret" {
+		t.Fatalf("expected decorated key to resolve, got %s", cfg.Token)
+	}
+}
+
+func TestLoaderAppliesDefaultValue(t *testing.T) {
+	type Config struct {
+		Name string `conflata:"default:'fallback name'"`
+	}
+	loader := New(WithEnvLookup(func(string) (string, bool) { return "", false }))
+	var cfg Config
+	if err := loader.Load(context.Background(), &cfg); err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Name != "fallback name" {
+		t.Fatalf("expected fallback value, got %s", cfg.Name)
+	}
+}
+
+func TestLoaderDefaultDecodeError(t *testing.T) {
+	type Config struct {
+		Port int `conflata:"default:'not-a-number'"`
+	}
+	loader := New()
+	var cfg Config
+	err := loader.Load(context.Background(), &cfg)
+	if err == nil {
+		t.Fatalf("expected error group")
+	}
+	group, ok := err.(*ErrorGroup)
+	if !ok {
+		t.Fatalf("expected ErrorGroup, got %T", err)
+	}
+	if len(group.Fields()) != 1 {
+		t.Fatalf("expected field error for default decode, got %v", group)
+	}
+	if !strings.Contains(group.Fields()[0].Attempts[0].Error(), "default") {
+		t.Fatalf("expected default attempt error, got %v", group.Fields()[0].Attempts[0].Error())
 	}
 }

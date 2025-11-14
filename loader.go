@@ -28,6 +28,8 @@ type Loader struct {
 	defaultProvider string
 	defaultFormat   string
 	decoders        map[string]DecodeFunc
+	prefixFunc      func() string
+	suffixFunc      func() string
 }
 
 // New constructs a Loader with optional functional options.
@@ -48,24 +50,28 @@ func New(opts ...Option) *Loader {
 	return l
 }
 
-// Load populates the provided struct pointer with configuration data. The
-// returned ErrorGroup will be non-nil when one or more fields could not be
-// satisfied (but Load will still attempt to hydrate the rest of the struct).
-func (l *Loader) Load(ctx context.Context, target any) (*ErrorGroup, error) {
+// Load populates the provided struct pointer with configuration data. When one
+// or more fields fail to load, the returned error will be an *ErrorGroup that
+// can be inspected for per-field failures. Other fatal errors (such as passing
+// a non-struct pointer) are returned directly.
+func (l *Loader) Load(ctx context.Context, target any) error {
 	if target == nil {
-		return nil, errors.New("conflata: target cannot be nil")
+		return errors.New("conflata: target cannot be nil")
 	}
 	value := reflect.ValueOf(target)
 	if value.Kind() != reflect.Pointer || value.IsNil() {
-		return nil, errors.New("conflata: target must be a non-nil pointer")
+		return errors.New("conflata: target must be a non-nil pointer")
 	}
 	elem := value.Elem()
 	if elem.Kind() != reflect.Struct {
-		return nil, errors.New("conflata: target must point to a struct")
+		return errors.New("conflata: target must point to a struct")
 	}
 	var group *ErrorGroup
 	l.walkStruct(ctx, elem, "", &group)
-	return group, nil
+	if group != nil && group.Has() {
+		return group
+	}
+	return nil
 }
 
 func (l *Loader) walkStruct(ctx context.Context, current reflect.Value, prefix string, group **ErrorGroup) {
@@ -82,7 +88,6 @@ func (l *Loader) walkStruct(ctx context.Context, current reflect.Value, prefix s
 		}
 		tagValue := field.Tag.Get("conflata")
 		if tagValue == "" {
-			l.descend(ctx, fieldValue, fieldPath, group)
 			continue
 		}
 		tag, err := parseFieldTag(tagValue)
@@ -96,7 +101,7 @@ func (l *Loader) walkStruct(ctx context.Context, current reflect.Value, prefix s
 			})
 			continue
 		}
-		if tag.EnvKey == "" && tag.ProviderKey == "" {
+		if tag.EnvKey == "" && tag.ProviderKey == "" && !tag.HasDefault {
 			appendFieldError(group, FieldError{
 				FieldPath: fieldPath,
 				Attempts: []AttemptError{{
@@ -141,6 +146,13 @@ func (l *Loader) populateField(ctx context.Context, fieldValue reflect.Value, fi
 		if collector.try(ctx, src, assign) {
 			return true, nil
 		}
+	}
+	if tag.HasDefault {
+		if err := l.assignValue(fieldValue, tag.DefaultValue, tag.Format); err != nil {
+			collector.fail(SourceTag, "default", fmt.Errorf("default decode: %w", err))
+			return false, collector.result()
+		}
+		return true, nil
 	}
 	return false, collector.result()
 }

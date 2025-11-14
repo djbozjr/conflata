@@ -57,3 +57,19 @@ func WithDefaultFormat(name string) Option {
 		l.defaultFormat = strings.ToLower(name)
 	}
 }
+
+// WithProviderPrefix supplies a function whose result is prepended to provider
+// keys prior to lookup (for example to inject environment names).
+func WithProviderPrefix(fn func() string) Option {
+	return func(l *Loader) {
+		l.prefixFunc = fn
+	}
+}
+
+// WithProviderSuffix supplies a function whose result is appended to provider
+// keys prior to lookup.
+func WithProviderSuffix(fn func() string) Option {
+	return func(l *Loader) {
+		l.suffixFunc = fn
+	}
+}

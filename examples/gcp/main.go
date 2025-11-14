@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
 	"time"
@@ -17,29 +16,14 @@ import (
 	"github.com/djbozjr/conflata/providers/gcpsecret"
 )
 
-type durationJSON struct{ time.Duration }
-
-func (d *durationJSON) UnmarshalJSON(data []byte) error {
-	var raw string
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	parsed, err := time.ParseDuration(raw)
-	if err != nil {
-		return err
-	}
-	d.Duration = parsed
-	return nil
-}
-
 type CacheSettings struct {
-	Enabled bool         `json:"enabled"`
-	TTL     durationJSON `json:"ttl"`
+	Enabled bool          `json:"enabled"`
+	TTL     time.Duration `json:"ttl"`
 }
 
 type APISettings struct {
 	BaseURL string        `json:"baseUrl"`
-	Timeout durationJSON  `json:"timeout"`
+	Timeout time.Duration `json:"timeout"`
 	Cache   CacheSettings `json:"cache"`
 	Token   string        `conflata:"env:API_TOKEN provider:api/token"`
 }
@@ -61,11 +45,11 @@ func main() {
 	)
 
 	var cfg Config
-	errGroup, err := loader.Load(ctx, &cfg)
-	if err != nil {
-		log.Fatalf("load config: %v", err)
+	if err := loader.Load(ctx, &cfg); err != nil {
+		if !exampleutil.ReportWarnings(err) {
+			log.Fatalf("load config: %v", err)
+		}
 	}
-	exampleutil.ReportWarnings(errGroup)
 	log.Printf("loaded config: %#v", cfg)
 }
 
@@ -86,13 +70,13 @@ func loadGCPProvider(ctx context.Context) (conflata.Provider, func()) {
 	if stub.Enabled() {
 		stub.PopulateEnv(map[string]string{
 			"GCP_PROJECT_ID": "stub-project",
-			"API_SETTINGS":   `{"baseUrl":"https://env-api","timeout":"12s","cache":{"enabled":true,"ttl":"20s"}}`,
+			"API_SETTINGS":   `{"baseUrl":"https://env-api","timeout":12000000000,"cache":{"enabled":true,"ttl":20000000000}}`,
 			"API_TOKEN":      "env-token",
 		})
 		client := stubGCPClient{
 			secrets: map[string]string{
 				"projects/my-gcp-project/secrets/project-id/versions/latest": "stub-project",
-				"api/settings": `{"baseUrl":"https://stub-api","timeout":"15s","cache":{"enabled":true,"ttl":"45s"}}`,
+				"api/settings": `{"baseUrl":"https://stub-api","timeout":15000000000,"cache":{"enabled":true,"ttl":45000000000}}`,
 				"api/token":    "provider-token",
 			},
 		}

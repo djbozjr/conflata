@@ -28,18 +28,18 @@ loader := conflata.New(
 )
 
 var cfg Config
-errs, err := loader.Load(context.Background(), &cfg)
-if err != nil {
-    log.Fatalf("invalid target: %v", err)
-}
-if errs != nil {
-    for _, fe := range errs.Fields() {
-        log.Printf("field %s failed: %v", fe.FieldPath, fe.Attempts)
+if err := loader.Load(context.Background(), &cfg); err != nil {
+    if group, ok := err.(*conflata.ErrorGroup); ok {
+        for _, fe := range group.Fields() {
+            log.Printf("field %s failed: %v", fe.FieldPath, fe.Attempts)
+        }
+    } else {
+        log.Fatalf("invalid target: %v", err)
     }
 }
 ```
 
-`Loader.Load` prefers environment variables when set. If a value is missing, it queries the configured provider and records structured errors for any failures.
+`Loader.Load` prefers environment variables when set. If a value is missing, it queries the configured provider and, when failures occur, returns an `*conflata.ErrorGroup` so you can inspect and handle them.
 
 ## Struct Tags
 
@@ -55,13 +55,17 @@ conflata:"env:DATABASE_URL provider:prod/database backend:vault format:json"
 | `provider`| Remote secret identifier (Vault path, AWS secret name, GCP secret). |
 | `backend` | Provider registration name. Defaults to `aws` unless overridden with `WithDefaultProvider`. |
 | `format`  | Decoder to use (`json`, `xml`, `text`, or custom formats registered via `WithDecoder`). |
+| `default` | Literal fallback value used when both `env` and `provider` fail or are omitted. Quote values containing spaces, e.g. `default:"my name"` |
 
 At least one of `env` or `provider` must be present. Environment values override provider values when both succeed.
 
 ### Advanced Usage
 
 - **Nested structs:** Tag an entire struct field (e.g. `API APISettings "conflata:\"env:API_JSON provider:api/settings\""`) to hydrate JSON/XML payloads while still allowing nested fields to declare their own tags (e.g. `API.Token`).
+- **Selective loading:** Fields without a `conflata` tag are skipped entirely—only tag the fields you want Conflata to manage.
 - **Custom decoders:** Register new formats with `WithDecoder` and reference them in tags, or set a new default decoder globally with `WithDefaultFormat`.
+- **Defaults:** Provide `default:"literal"` on any field to supply a fallback when env/provider values are absent.
+- **Provider namespacing:** Use `WithProviderPrefix`/`WithProviderSuffix` to dynamically prepend/append identifiers (e.g., environment names) to provider keys before lookup.
 - **Custom providers:** Implement the `conflata.Provider` interface and register instances via `WithProvider`.
 - **Error inspection:** `Loader.Load` returns an `*ErrorGroup`. Iterate the grouped `FieldError`s to determine which configuration values failed and why without aborting the entire load.
 
@@ -77,7 +81,7 @@ Override with the `format:` tag or global `WithDefaultFormat`.
 
 ### Errors
 
-`ErrorGroup.Fields()` returns one `FieldError` per struct field with the associated attempts (environment/provider/decoder failures). Use this to decide whether to continue with partial configuration.
+When `Loader.Load` returns an error, type assert it to `*conflata.ErrorGroup`. Each group exposes `Fields()` containing the attempted sources (environment, provider, decoder) per field so you can decide whether to continue with partial configuration or fail fast.
 
 ## Custom Providers
 

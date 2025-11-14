@@ -12,7 +12,11 @@
 //	}
 //
 //	loader := conflata.New(conflata.WithProvider("aws", awsProvider))
-//	if errGroup, err := loader.Load(ctx, &cfg); errGroup != nil {
-//	    log.Println(errGroup)
+//	if err := loader.Load(ctx, &cfg); err != nil {
+//	    if group, ok := err.(*conflata.ErrorGroup); ok {
+//	        log.Println(group)
+//	    } else {
+//	        log.Fatal(err)
+//	    }
 //	}
 package conflata

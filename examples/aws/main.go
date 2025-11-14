@@ -50,11 +50,11 @@ func main() {
 	)
 
 	var cfg AppConfig
-	errGroup, err := loader.Load(ctx, &cfg)
-	if err != nil {
-		log.Fatalf("load config: %v", err)
+	if err := loader.Load(ctx, &cfg); err != nil {
+		if !exampleutil.ReportWarnings(err) {
+			log.Fatalf("load config: %v", err)
+		}
 	}
-	exampleutil.ReportWarnings(errGroup)
 
 	log.Printf("conflata example loaded config: %#v", cfg)
 }
